@@ -122,6 +122,7 @@ class ShoppingListViewModel(application: Application) : AndroidViewModel(applica
     private val dao: ShoppingDao = ShoppingDatabase.getInstance(application).shoppingDao()
     private val _shoppingList = mutableStateListOf<ShoppingItem>()
     val shoppingList: List<ShoppingItem> get() = _shoppingList
+    val boughtCount: Int get() = _shoppingList.count { it.isBought }
 
     init {
         loadShoppingList()
@@ -248,16 +249,24 @@ fun ShoppingListScreen(viewModel: ShoppingListViewModel = viewModel(
     factory = ShoppingListViewModelFactory(LocalContext.current
         .applicationContext as Application)
 )) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(16.dp)
     ) {
-        item {
-            AddItemButton { viewModel.addItem(it) }
-        }
-        itemsIndexed(viewModel.shoppingList) { ix, item ->
-            ShoppingItemCard(item) {
-                viewModel.toggleBought(ix)
+        AddItemButton { viewModel.addItem(it) }
+        Text(
+            text = "Куплено: ${viewModel.boughtCount} / ${viewModel.shoppingList.size}",
+            fontSize = 16.sp,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            itemsIndexed(viewModel.shoppingList) { ix, item ->
+                ShoppingItemCard(item) {
+                    viewModel.toggleBought(ix)
+                }
             }
         }
     }
