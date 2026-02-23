@@ -217,33 +217,6 @@ fun AddItemButton(addItem: (String) -> Unit = {}) {
     }
 }
 
-//interface ShoppingApi {
-//    @GET("items")
-//    suspend fun getItems(): List<ShoppingItem>
-//
-//    @POST("items")
-//    suspend fun addItem(@Body item: ShoppingItem)
-//
-//    @PUT("items/{id}")
-//    suspend fun updateItem(@Path("id") id: Int, @Body item: ShoppingItem)
-//
-//    @DELETE("items")
-//    suspend fun clearItems()
-//}
-//
-//object RetrofitInstance {
-//    private const val BASE_URL = "http://10.0.2.2:8080/"
-//
-//    val api: ShoppingApi by lazy {
-//        Retrofit.Builder()
-//            .baseUrl(BASE_URL)
-//            .addConverterFactory(GsonConverterFactory.create())
-//            .build()
-//            .create(ShoppingApi::class.java)
-//    }
-//}
-
-
 @Composable
 fun ShoppingListScreen(viewModel: ShoppingListViewModel = viewModel(
     factory = ShoppingListViewModelFactory(LocalContext.current
