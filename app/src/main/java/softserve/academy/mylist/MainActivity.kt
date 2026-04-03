@@ -8,50 +8,28 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.room.Dao
-import androidx.room.Database
-import androidx.room.Delete
-import androidx.room.Entity
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.PrimaryKey
-import androidx.room.Query
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.Update
+import androidx.room.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import softserve.academy.mylist.ui.theme.MyListTheme
 
@@ -71,19 +49,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Model View ViewModel
-
 @Entity(tableName = "shopping_items")
 data class ShoppingItem(
     val name: String,
     val isBought: Boolean = false,
     @PrimaryKey(autoGenerate = true) val id: Int = 0
 )
-// ORM
+
 @Dao
 interface ShoppingDao {
     @Query("SELECT * FROM shopping_items ORDER BY id DESC")
-    fun getAllItems(): List<ShoppingItem>
+    fun getAllItems(): Flow<List<ShoppingItem>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertItem(item: ShoppingItem)
@@ -117,148 +93,155 @@ abstract class ShoppingDatabase : RoomDatabase() {
     }
 }
 
-
 class ShoppingListViewModel(application: Application) : AndroidViewModel(application) {
     private val dao: ShoppingDao = ShoppingDatabase.getInstance(application).shoppingDao()
-    private val _shoppingList = mutableStateListOf<ShoppingItem>()
-    val shoppingList: List<ShoppingItem> get() = _shoppingList
-    val boughtCount: Int get() = _shoppingList.count { it.isBought }
+
+    var shoppingList by mutableStateOf<List<ShoppingItem>>(emptyList())
+        private set
+
+    val boughtCount: Int get() = shoppingList.count { it.isBought }
 
     init {
-        loadShoppingList()
-    }
-
-    private fun loadShoppingList() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val items = dao.getAllItems()
-            _shoppingList.clear()
-            _shoppingList.addAll(items)
+        viewModelScope.launch {
+            dao.getAllItems().collect { items ->
+                shoppingList = items
+            }
         }
     }
 
     fun addItem(name: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val newItem = ShoppingItem(name = name)
-            dao.insertItem(newItem)
-            loadShoppingList()
+            dao.insertItem(ShoppingItem(name = name.trim()))
         }
     }
 
-    fun toggleBought(index: Int) {
+    fun toggleBought(item: ShoppingItem) {
         viewModelScope.launch(Dispatchers.IO) {
-            val item = _shoppingList[index]
-            val updatedItem = item.copy(isBought = !item.isBought)
-            dao.updateItem(updatedItem)
-            _shoppingList[index] = updatedItem
+            dao.updateItem(item.copy(isBought = !item.isBought))
+        }
+    }
+
+    fun deleteItem(item: ShoppingItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteItem(item)
         }
     }
 }
-
 
 @Composable
 fun ShoppingItemCard(
     item: ShoppingItem,
-    onToggleBought: () -> Unit = {}
+    onToggleBought: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .background(
-                Color.LightGray,
-//                MaterialTheme.colorScheme.surfaceDim,
-                MaterialTheme.shapes.large
-            )
+            .padding(vertical = 4.dp)
+            .background(Color.LightGray, MaterialTheme.shapes.medium)
             .clickable { onToggleBought() }
-            .padding(16.dp),
+            .padding(8.dp)
+            .testTag("item_${item.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Checkbox(checked = item.isBought, onCheckedChange = {
-            onToggleBought()
-        })
+        Checkbox(
+            checked = item.isBought,
+            onCheckedChange = { onToggleBought() },
+            modifier = Modifier.testTag("checkbox_${item.id}")
+        )
         Text(
             text = item.name,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             fontSize = 18.sp
         )
-    }
-}
-
-
-class ShoppingListViewModelFactory(private val application: Application) :
-    ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(ShoppingListViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return ShoppingListViewModel(application) as T
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.testTag("delete_btn_${item.id}")
+        ) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Gray)
         }
-        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
 @Composable
-fun AddItemButton(addItem: (String) -> Unit = {}) {
+fun AddItemSection(addItem: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }
+    val maxChar = 30
 
-    Column {
+    Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = text,
-            onValueChange = { text = it },
-            label = { Text("Add Item") }
-        )
-        Button(onClick = {
-            if (text.isNotEmpty()) {
-                addItem(text)
-                text = ""
+            onValueChange = {
+                if (it.length <= maxChar) {
+                    text = it
+                    isError = false
+                }
+            },
+            label = { Text("Назва товару") },
+            modifier = Modifier.fillMaxWidth().testTag("input_field"),
+            isError = isError,
+            supportingText = {
+                if (isError) {
+                    Text("Назва не може бути порожньою", color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text("${text.length}/$maxChar")
+                }
             }
-        }) {
-            Text("Add")
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = {
+                if (text.isBlank()) {
+                    isError = true
+                } else {
+                    addItem(text)
+                    text = ""
+                    isError = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth().testTag("add_button")
+        ) {
+            Text("Додати у список")
         }
     }
 }
 
 @Composable
 fun ShoppingListScreen(viewModel: ShoppingListViewModel = viewModel(
-    factory = ShoppingListViewModelFactory(LocalContext.current
-        .applicationContext as Application)
+    factory = ShoppingListViewModelFactory(LocalContext.current.applicationContext as Application)
 )) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        AddItemButton { viewModel.addItem(it) }
+        AddItemSection { viewModel.addItem(it) }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
         Text(
             text = "Куплено: ${viewModel.boughtCount} / ${viewModel.shoppingList.size}",
             fontSize = 16.sp,
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp).testTag("counter_text")
         )
+
         LazyColumn(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxSize().testTag("items_list")
         ) {
-            itemsIndexed(viewModel.shoppingList) { ix, item ->
-                ShoppingItemCard(item) {
-                    viewModel.toggleBought(ix)
-                }
+            items(viewModel.shoppingList, key = { it.id }) { item ->
+                ShoppingItemCard(
+                    item = item,
+                    onToggleBought = { viewModel.toggleBought(item) },
+                    onDelete = { viewModel.deleteItem(item) }
+                )
             }
         }
     }
 }
 
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-fun ShoppingListScreenPreview() {
-    ShoppingListScreen()
-}
-
-
-//@Preview(showBackground = true)
-@Composable
-fun ShoppingItemCardPreview() {
-    var toggleState by remember { mutableStateOf(false) }
-    ShoppingItemCard(
-        ShoppingItem("Молоко", isBought = toggleState)
-    ) {
-        toggleState = !toggleState
+class ShoppingListViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return ShoppingListViewModel(application) as T
     }
 }
