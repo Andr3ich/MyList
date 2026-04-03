@@ -62,13 +62,16 @@ interface ShoppingDao {
     fun getAllItems(): Flow<List<ShoppingItem>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertItem(item: ShoppingItem)
+    suspend fun insertItem(item: ShoppingItem)
 
     @Update
-    fun updateItem(item: ShoppingItem)
+    suspend fun updateItem(item: ShoppingItem)
 
     @Delete
-    fun deleteItem(item: ShoppingItem)
+    suspend fun deleteItem(item: ShoppingItem)
+
+    @Query("DELETE FROM shopping_items")
+    suspend fun deleteAll()
 }
 
 @Database(entities = [ShoppingItem::class], version = 1)
@@ -95,17 +98,13 @@ abstract class ShoppingDatabase : RoomDatabase() {
 
 class ShoppingListViewModel(application: Application) : AndroidViewModel(application) {
     private val dao: ShoppingDao = ShoppingDatabase.getInstance(application).shoppingDao()
-
     var shoppingList by mutableStateOf<List<ShoppingItem>>(emptyList())
         private set
-
     val boughtCount: Int get() = shoppingList.count { it.isBought }
 
     init {
         viewModelScope.launch {
-            dao.getAllItems().collect { items ->
-                shoppingList = items
-            }
+            dao.getAllItems().collect { items -> shoppingList = items }
         }
     }
 
@@ -129,35 +128,19 @@ class ShoppingListViewModel(application: Application) : AndroidViewModel(applica
 }
 
 @Composable
-fun ShoppingItemCard(
-    item: ShoppingItem,
-    onToggleBought: () -> Unit,
-    onDelete: () -> Unit
-) {
+fun ShoppingItemCard(item: ShoppingItem, onToggleBought: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .background(Color.LightGray, MaterialTheme.shapes.medium)
             .clickable { onToggleBought() }
-            .padding(8.dp)
-            .testTag("item_${item.id}"),
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Checkbox(
-            checked = item.isBought,
-            onCheckedChange = { onToggleBought() },
-            modifier = Modifier.testTag("checkbox_${item.id}")
-        )
-        Text(
-            text = item.name,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-            fontSize = 18.sp
-        )
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.testTag("delete_btn_${item.id}")
-        ) {
+        Checkbox(checked = item.isBought, onCheckedChange = { onToggleBought() })
+        Text(text = item.name, modifier = Modifier.weight(1f).padding(horizontal = 8.dp), fontSize = 18.sp)
+        IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Gray)
         }
     }
@@ -167,39 +150,19 @@ fun ShoppingItemCard(
 fun AddItemSection(addItem: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
-    val maxChar = 30
 
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = text,
-            onValueChange = {
-                if (it.length <= maxChar) {
-                    text = it
-                    isError = false
-                }
-            },
+            onValueChange = { if (it.length <= 30) { text = it; isError = false } },
             label = { Text("Назва товару") },
             modifier = Modifier.fillMaxWidth().testTag("input_field"),
             isError = isError,
-            supportingText = {
-                if (isError) {
-                    Text("Назва не може бути порожньою", color = MaterialTheme.colorScheme.error)
-                } else {
-                    Text("${text.length}/$maxChar")
-                }
-            }
+            supportingText = { if (isError) Text("Назва не може бути порожньою") else Text("${text.length}/30") }
         )
         Spacer(modifier = Modifier.height(8.dp))
         Button(
-            onClick = {
-                if (text.isBlank()) {
-                    isError = true
-                } else {
-                    addItem(text)
-                    text = ""
-                    isError = false
-                }
-            },
+            onClick = { if (text.isBlank()) isError = true else { addItem(text); text = ""; isError = false } },
             modifier = Modifier.fillMaxWidth().testTag("add_button")
         ) {
             Text("Додати у список")
@@ -211,30 +174,17 @@ fun AddItemSection(addItem: (String) -> Unit) {
 fun ShoppingListScreen(viewModel: ShoppingListViewModel = viewModel(
     factory = ShoppingListViewModelFactory(LocalContext.current.applicationContext as Application)
 )) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         AddItemSection { viewModel.addItem(it) }
-
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-
         Text(
             text = "Куплено: ${viewModel.boughtCount} / ${viewModel.shoppingList.size}",
             fontSize = 16.sp,
             modifier = Modifier.padding(bottom = 8.dp).testTag("counter_text")
         )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().testTag("items_list")
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(viewModel.shoppingList, key = { it.id }) { item ->
-                ShoppingItemCard(
-                    item = item,
-                    onToggleBought = { viewModel.toggleBought(item) },
-                    onDelete = { viewModel.deleteItem(item) }
-                )
+                ShoppingItemCard(item = item, onToggleBought = { viewModel.toggleBought(item) }, onDelete = { viewModel.deleteItem(item) })
             }
         }
     }
